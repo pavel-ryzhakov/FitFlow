@@ -1,4 +1,5 @@
 ﻿using FitFlow.Application.Clients;
+using FitFlow.Application.Common.Results;
 using FitFlow.Domain.Entities;
 using FitFlow.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -32,9 +33,9 @@ public class ClientService : IClientService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<ClientDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result<ClientDto>> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Clients
+        var client = await _dbContext.Clients
             .AsNoTracking()
             .Where(x => x.Id == id)
             .Select(x => new ClientDto
@@ -48,9 +49,16 @@ public class ClientService : IClientService
                 IsActive = x.IsActive
             })
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (client is null)
+        {
+            return Result<ClientDto>.Failure(ClientError.NotFound);
+        }
+
+        return Result<ClientDto>.Success(client);
     }
 
-    public async Task<ClientDto> CreateAsync(ClientCreationRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result<ClientDto>> CreateAsync(ClientCreationRequest request, CancellationToken cancellationToken = default)
     {
         var client = new Client
         {
@@ -66,7 +74,7 @@ public class ClientService : IClientService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return new ClientDto
+        var clientDto = new ClientDto
         {
             Id = client.Id,
             FirstName = client.FirstName,
@@ -76,16 +84,21 @@ public class ClientService : IClientService
             BirthDate = client.BirthDate,
             IsActive = client.IsActive
         };
+
+        return Result<ClientDto>.Success(clientDto);
     }
 
-    public async Task<bool> UpdateAsync(Guid id, ClientUpdateRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result> UpdateAsync(
+        Guid id,
+        ClientUpdateRequest request,
+        CancellationToken cancellationToken = default)
     {
         var client = await _dbContext.Clients
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
         if (client is null)
         {
-            return false;
+            return Result.Failure(ClientError.NotFound);
         }
 
         client.FirstName = request.FirstName;
@@ -98,17 +111,17 @@ public class ClientService : IClientService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return true;
+        return Result.Success();
     }
 
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var client = await _dbContext.Clients
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
         if (client is null)
         {
-            return false;
+            return Result.Failure(ClientError.NotFound);
         }
 
         // Мягкое удаление: не удаляем клиента физически, а делаем неактивным.
@@ -118,6 +131,6 @@ public class ClientService : IClientService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return true;
+        return Result.Success();
     }
 }

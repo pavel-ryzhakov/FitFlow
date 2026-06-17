@@ -1,5 +1,8 @@
-﻿using FitFlow.Application.Clients;
+﻿using FitFlow.Api.Extensions;
+using FitFlow.Application.Clients;
+using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
+
 
 namespace FitFlow.Api.Controllers;
 
@@ -8,10 +11,17 @@ namespace FitFlow.Api.Controllers;
 public class ClientsController : ControllerBase
 {
     private readonly IClientService _clientService;
+    private readonly IValidator<ClientCreationRequest> _clientCreationValidator;
+    private readonly IValidator<ClientUpdateRequest> _clientUpdateValidator;
 
-    public ClientsController(IClientService clientService)
+    public ClientsController(
+        IClientService clientService,
+        IValidator<ClientCreationRequest> clientCreationValidator,
+        IValidator<ClientUpdateRequest> clientUpdateValidator)
     {
         _clientService = clientService;
+        _clientCreationValidator = clientCreationValidator;
+        _clientUpdateValidator = clientUpdateValidator;
     }
 
     [HttpGet]
@@ -27,14 +37,14 @@ public class ClientsController : ControllerBase
         Guid id,
         CancellationToken cancellationToken)
     {
-        var client = await _clientService.GetByIdAsync(id, cancellationToken);
+        var result = await _clientService.GetByIdAsync(id, cancellationToken);
 
-        if (client is null)
+        if (result.IsFailure)
         {
-            return NotFound();
+            return NotFound(result.Error);
         }
 
-        return Ok(client);
+        return Ok(result.Value);
     }
 
     [HttpPost]
@@ -42,7 +52,23 @@ public class ClientsController : ControllerBase
         ClientCreationRequest request,
         CancellationToken cancellationToken)
     {
-        var client = await _clientService.CreateAsync(request, cancellationToken);
+        var validationResult = await _clientCreationValidator.ValidateAsync(request, cancellationToken);
+
+        if (!validationResult.IsValid)
+        {
+            return ValidationProblem(
+                new ValidationProblemDetails(validationResult.ToErrorDictionary())
+            );
+        }
+
+        var result = await _clientService.CreateAsync(request, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return BadRequest(result.Error);
+        }
+
+        var client = result.Value!;
 
         return CreatedAtAction(
             nameof(GetById),
@@ -56,11 +82,20 @@ public class ClientsController : ControllerBase
         ClientUpdateRequest request,
         CancellationToken cancellationToken)
     {
+        var validationResult = await _clientUpdateValidator.ValidateAsync(request, cancellationToken);
+
+        if (!validationResult.IsValid)
+        {
+            return ValidationProblem(
+                new ValidationProblemDetails(validationResult.ToErrorDictionary())
+            );
+        }
+
         var result = await _clientService.UpdateAsync(id, request, cancellationToken);
 
-        if (!result)
+        if (result.IsFailure)
         {
-            return NotFound();
+            return NotFound(result.Error);
         }
 
         return NoContent();
@@ -73,9 +108,9 @@ public class ClientsController : ControllerBase
     {
         var result = await _clientService.DeleteAsync(id, cancellationToken);
 
-        if (!result)
+        if (result.IsFailure)
         {
-            return NotFound();
+            return NotFound(result.Error);
         }
 
         return NoContent();
