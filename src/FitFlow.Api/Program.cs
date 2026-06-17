@@ -13,6 +13,13 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 var jwtOptions = builder.Configuration.GetSection("Jwt");
 
+var jwtSecretKey = jwtOptions["SecretKey"];
+
+if (string.IsNullOrWhiteSpace(jwtSecretKey))
+{
+    throw new InvalidOperationException("JWT secret key is not configured.");
+}
+
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -29,7 +36,7 @@ builder.Services
 
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(jwtOptions["SecretKey"]!))
+                Encoding.UTF8.GetBytes(jwtSecretKey))
         };
     });
 
