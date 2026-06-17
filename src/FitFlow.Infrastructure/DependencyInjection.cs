@@ -10,7 +10,10 @@ using FitFlow.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-
+using FitFlow.Application.Auth;
+using FitFlow.Domain.Entities;
+using FitFlow.Infrastructure.Auth;
+using Microsoft.AspNetCore.Identity;
 
 namespace FitFlow.Infrastructure;
 
@@ -24,7 +27,10 @@ public static class DependencyInjection
 
         services.AddDbContext<FitFlowDbContext>(options =>
             options.UseNpgsql(connectionString));
+        services.Configure<JwtOptions>(configuration.GetSection("Jwt"));
 
+        services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
         services.AddScoped<IClientService, ClientService>();
         services.AddScoped<ITrainerService, TrainerService>();
         services.AddScoped<ISectionService, SectionService>();
@@ -32,6 +38,7 @@ public static class DependencyInjection
         services.AddScoped<IVisitService, VisitService>();
         services.AddScoped<ITrainingSessionService, TrainingSessionService>();
         services.AddScoped<IPaymentService, PaymentService>();
+        
         return services;
     }
 }

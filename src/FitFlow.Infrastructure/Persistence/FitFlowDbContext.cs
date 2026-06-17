@@ -19,6 +19,7 @@ public class FitFlowDbContext : DbContext
     public DbSet<TrainingSession> TrainingSessions => Set<TrainingSession>();
     public DbSet<Visit> Visits => Set<Visit>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<User> Users => Set<User>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -98,6 +99,31 @@ public class FitFlowDbContext : DbContext
                 .WithMany(x => x.Payments)
                 .HasForeignKey(x => x.MembershipId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+        
+        modelBuilder.Entity<User>(entity =>
+        {
+            entity.Property(x => x.UserName)
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(x => x.Email)
+                .HasMaxLength(150)
+                .IsRequired();
+
+            entity.Property(x => x.PasswordHash)
+                .IsRequired();
+
+            entity.Property(x => x.Role)
+                .HasConversion<string>()
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.HasIndex(x => x.UserName)
+                .IsUnique();
+
+            entity.HasIndex(x => x.Email)
+                .IsUnique();
         });
     }
 }
