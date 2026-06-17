@@ -1,4 +1,4 @@
-﻿using FitFlow.Application;
+﻿using FitFlow.Application.Common.Results;
 using FitFlow.Application.Visits;
 using FitFlow.Domain.Entities;
 using FitFlow.Domain.Enums;
@@ -41,9 +41,11 @@ public class VisitService : IVisitService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<VisitDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result<VisitDto>> GetByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Visits
+        var visit = await _dbContext.Visits
             .AsNoTracking()
             .Include(x => x.Client)
             .Include(x => x.TrainingSession)
@@ -64,13 +66,28 @@ public class VisitService : IVisitService
                 VisitedAt = x.VisitedAt
             })
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (visit is null)
+        {
+            return Result<VisitDto>.Failure(VisitErrors.NotFound);
+        }
+
+        return Result<VisitDto>.Success(visit);
     }
 
-    public async Task<List<VisitDto>> GetByClientIdAsync(
+    public async Task<Result<List<VisitDto>>> GetByClientIdAsync(
         Guid clientId,
         CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Visits
+        var clientExists = await _dbContext.Clients
+            .AnyAsync(x => x.Id == clientId, cancellationToken);
+
+        if (!clientExists)
+        {
+            return Result<List<VisitDto>>.Failure(VisitErrors.ClientNotFound);
+        }
+
+        var visits = await _dbContext.Visits
             .AsNoTracking()
             .Include(x => x.Client)
             .Include(x => x.TrainingSession)
@@ -92,18 +109,25 @@ public class VisitService : IVisitService
                 VisitedAt = x.VisitedAt
             })
             .ToListAsync(cancellationToken);
+
+        return Result<List<VisitDto>>.Success(visits);
     }
 
-    public async Task<VisitDto?> RegisterAsync(
+    public async Task<Result<VisitDto>> RegisterAsync(
         VisitRegistrationRequest request,
         CancellationToken cancellationToken = default)
     {
         var client = await _dbContext.Clients
             .FirstOrDefaultAsync(x => x.Id == request.ClientId, cancellationToken);
 
-        if (client is null || !client.IsActive)
+        if (client is null)
         {
-            return null;
+            return Result<VisitDto>.Failure(VisitErrors.ClientNotFound);
+        }
+
+        if (!client.IsActive)
+        {
+            return Result<VisitDto>.Failure(VisitErrors.ClientInactive);
         }
 
         var membership = await _dbContext.Memberships
@@ -114,27 +138,34 @@ public class VisitService : IVisitService
 
         if (membership is null)
         {
-            return null;
+            return Result<VisitDto>.Failure(VisitErrors.MembershipNotFound);
         }
 
         var now = DateTime.UtcNow;
 
         if (membership.Status != MembershipStatus.Active)
         {
-            return null;
+            return Result<VisitDto>.Failure(VisitErrors.MembershipInactive);
         }
 
-        if (membership.StartDate > now || membership.EndDate < now)
+        if (membership.StartDate > now)
+        {
+            return Result<VisitDto>.Failure(VisitErrors.MembershipNotStarted);
+        }
+
+        if (membership.EndDate < now)
         {
             membership.Status = MembershipStatus.Expired;
+            membership.UpdatedAt = now;
+
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            return null;
+            return Result<VisitDto>.Failure(VisitErrors.MembershipExpired);
         }
 
         if (membership.VisitsUsed >= membership.VisitsLimit)
         {
-            return null;
+            return Result<VisitDto>.Failure(VisitErrors.VisitLimitExceeded);
         }
 
         TrainingSession? trainingSession = null;
@@ -143,11 +174,17 @@ public class VisitService : IVisitService
         {
             trainingSession = await _dbContext.TrainingSessions
                 .Include(x => x.Section)
+                .Include(x => x.Visits)
                 .FirstOrDefaultAsync(x => x.Id == request.TrainingSessionId.Value, cancellationToken);
 
             if (trainingSession is null)
             {
-                return null;
+                return Result<VisitDto>.Failure(VisitErrors.TrainingSessionNotFound);
+            }
+
+            if (trainingSession.Visits.Count >= trainingSession.MaxParticipants)
+            {
+                return Result<VisitDto>.Failure(VisitErrors.TrainingSessionFull);
             }
         }
 
@@ -166,7 +203,7 @@ public class VisitService : IVisitService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return new VisitDto
+        return Result<VisitDto>.Success(new VisitDto
         {
             Id = visit.Id,
             ClientId = visit.ClientId,
@@ -175,17 +212,17 @@ public class VisitService : IVisitService
             TrainingSessionId = visit.TrainingSessionId,
             SectionName = trainingSession?.Section?.Name,
             VisitedAt = visit.VisitedAt
-        };
+        });
     }
 
-    public async Task<bool> CancelAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result> CancelAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var visit = await _dbContext.Visits
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
         if (visit is null)
         {
-            return false;
+            return Result.Failure(VisitErrors.NotFound);
         }
 
         var membership = await _dbContext.Memberships
@@ -201,6 +238,6 @@ public class VisitService : IVisitService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return true;
+        return Result.Success();
     }
 }

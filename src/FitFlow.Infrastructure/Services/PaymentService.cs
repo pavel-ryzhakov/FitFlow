@@ -1,4 +1,5 @@
-﻿using FitFlow.Application.Payments;
+﻿using FitFlow.Application.Common.Results;
+using FitFlow.Application.Payments;
 using FitFlow.Domain.Entities;
 using FitFlow.Domain.Enums;
 using FitFlow.Infrastructure.Persistence;
@@ -37,9 +38,11 @@ public class PaymentService : IPaymentService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<PaymentDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result<PaymentDto>> GetByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Payments
+        var payment = await _dbContext.Payments
             .AsNoTracking()
             .Include(x => x.Client)
             .Where(x => x.Id == id)
@@ -57,13 +60,28 @@ public class PaymentService : IPaymentService
                 Status = x.Status
             })
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (payment is null)
+        {
+            return Result<PaymentDto>.Failure(PaymentErrors.NotFound);
+        }
+
+        return Result<PaymentDto>.Success(payment);
     }
 
-    public async Task<List<PaymentDto>> GetByClientIdAsync(
+    public async Task<Result<List<PaymentDto>>> GetByClientIdAsync(
         Guid clientId,
         CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Payments
+        var clientExists = await _dbContext.Clients
+            .AnyAsync(x => x.Id == clientId, cancellationToken);
+
+        if (!clientExists)
+        {
+            return Result<List<PaymentDto>>.Failure(PaymentErrors.ClientNotFound);
+        }
+
+        var payments = await _dbContext.Payments
             .AsNoTracking()
             .Include(x => x.Client)
             .Where(x => x.ClientId == clientId)
@@ -82,13 +100,23 @@ public class PaymentService : IPaymentService
                 Status = x.Status
             })
             .ToListAsync(cancellationToken);
+
+        return Result<List<PaymentDto>>.Success(payments);
     }
 
-    public async Task<List<PaymentDto>> GetByMembershipIdAsync(
+    public async Task<Result<List<PaymentDto>>> GetByMembershipIdAsync(
         Guid membershipId,
         CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Payments
+        var membershipExists = await _dbContext.Memberships
+            .AnyAsync(x => x.Id == membershipId, cancellationToken);
+
+        if (!membershipExists)
+        {
+            return Result<List<PaymentDto>>.Failure(PaymentErrors.MembershipNotFound);
+        }
+
+        var payments = await _dbContext.Payments
             .AsNoTracking()
             .Include(x => x.Client)
             .Where(x => x.MembershipId == membershipId)
@@ -107,23 +135,30 @@ public class PaymentService : IPaymentService
                 Status = x.Status
             })
             .ToListAsync(cancellationToken);
+
+        return Result<List<PaymentDto>>.Success(payments);
     }
 
-    public async Task<PaymentDto?> CreateAsync(
+    public async Task<Result<PaymentDto>> CreateAsync(
         PaymentCreationRequest request,
         CancellationToken cancellationToken = default)
     {
         if (request.Amount <= 0)
         {
-            return null;
+            return Result<PaymentDto>.Failure(PaymentErrors.InvalidAmount);
         }
 
         var client = await _dbContext.Clients
             .FirstOrDefaultAsync(x => x.Id == request.ClientId, cancellationToken);
 
-        if (client is null || !client.IsActive)
+        if (client is null)
         {
-            return null;
+            return Result<PaymentDto>.Failure(PaymentErrors.ClientNotFound);
+        }
+
+        if (!client.IsActive)
+        {
+            return Result<PaymentDto>.Failure(PaymentErrors.ClientInactive);
         }
 
         if (request.MembershipId.HasValue)
@@ -136,7 +171,7 @@ public class PaymentService : IPaymentService
 
             if (!membershipExists)
             {
-                return null;
+                return Result<PaymentDto>.Failure(PaymentErrors.MembershipNotFound);
             }
         }
 
@@ -154,7 +189,7 @@ public class PaymentService : IPaymentService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return new PaymentDto
+        return Result<PaymentDto>.Success(new PaymentDto
         {
             Id = payment.Id,
             ClientId = payment.ClientId,
@@ -164,22 +199,22 @@ public class PaymentService : IPaymentService
             PaidAt = payment.PaidAt,
             Method = payment.PaymentMethod,
             Status = payment.Status
-        };
+        });
     }
 
-    public async Task<bool> RefundAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result> RefundAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var payment = await _dbContext.Payments
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
         if (payment is null)
         {
-            return false;
+            return Result.Failure(PaymentErrors.NotFound);
         }
 
         if (payment.Status == PaymentStatus.Refunded)
         {
-            return false;
+            return Result.Failure(PaymentErrors.AlreadyRefunded);
         }
 
         payment.Status = PaymentStatus.Refunded;
@@ -187,6 +222,6 @@ public class PaymentService : IPaymentService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return true;
+        return Result.Success();
     }
 }

@@ -1,4 +1,6 @@
+using FitFlow.Api.Extensions;
 using FitFlow.Application.Payments;
+using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FitFlow.Api.Controllers;
@@ -8,10 +10,14 @@ namespace FitFlow.Api.Controllers;
 public class PaymentsController : ControllerBase
 {
     private readonly IPaymentService _paymentService;
+    private readonly IValidator<PaymentCreationRequest> _paymentCreationValidator;
 
-    public PaymentsController(IPaymentService paymentService)
+    public PaymentsController(
+        IPaymentService paymentService,
+        IValidator<PaymentCreationRequest> paymentCreationValidator)
     {
         _paymentService = paymentService;
+        _paymentCreationValidator = paymentCreationValidator;
     }
 
     [HttpGet]
@@ -27,14 +33,14 @@ public class PaymentsController : ControllerBase
         Guid id,
         CancellationToken cancellationToken)
     {
-        var payment = await _paymentService.GetByIdAsync(id, cancellationToken);
+        var result = await _paymentService.GetByIdAsync(id, cancellationToken);
 
-        if (payment is null)
+        if (result.IsFailure)
         {
-            return NotFound();
+            return NotFound(result.Error);
         }
 
-        return Ok(payment);
+        return Ok(result.Value);
     }
 
     [HttpGet("client/{clientId:guid}")]
@@ -42,9 +48,14 @@ public class PaymentsController : ControllerBase
         Guid clientId,
         CancellationToken cancellationToken)
     {
-        var payments = await _paymentService.GetByClientIdAsync(clientId, cancellationToken);
+        var result = await _paymentService.GetByClientIdAsync(clientId, cancellationToken);
 
-        return Ok(payments);
+        if (result.IsFailure)
+        {
+            return NotFound(result.Error);
+        }
+
+        return Ok(result.Value);
     }
 
     [HttpGet("membership/{membershipId:guid}")]
@@ -52,9 +63,14 @@ public class PaymentsController : ControllerBase
         Guid membershipId,
         CancellationToken cancellationToken)
     {
-        var payments = await _paymentService.GetByMembershipIdAsync(membershipId, cancellationToken);
+        var result = await _paymentService.GetByMembershipIdAsync(membershipId, cancellationToken);
 
-        return Ok(payments);
+        if (result.IsFailure)
+        {
+            return NotFound(result.Error);
+        }
+
+        return Ok(result.Value);
     }
 
     [HttpPost]
@@ -62,12 +78,21 @@ public class PaymentsController : ControllerBase
         PaymentCreationRequest request,
         CancellationToken cancellationToken)
     {
-        var payment = await _paymentService.CreateAsync(request, cancellationToken);
+        var validationResult = await _paymentCreationValidator.ValidateAsync(request, cancellationToken);
 
-        if (payment is null)
+        if (!validationResult.IsValid)
         {
-            return BadRequest("Payment data is invalid.");
+            return ValidationProblem(new ValidationProblemDetails(validationResult.ToErrorDictionary()));
         }
+
+        var result = await _paymentService.CreateAsync(request, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return BadRequest(result.Error);
+        }
+
+        var payment = result.Value!;
 
         return CreatedAtAction(
             nameof(GetById),
@@ -82,9 +107,14 @@ public class PaymentsController : ControllerBase
     {
         var result = await _paymentService.RefundAsync(id, cancellationToken);
 
-        if (!result)
+        if (result.IsFailure)
         {
-            return BadRequest("Payment was not found or already refunded.");
+            if (result.Error == PaymentErrors.NotFound)
+            {
+                return NotFound(result.Error);
+            }
+
+            return BadRequest(result.Error);
         }
 
         return NoContent();
