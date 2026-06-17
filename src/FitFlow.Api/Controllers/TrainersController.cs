@@ -1,4 +1,6 @@
-﻿using FitFlow.Application.Trainers;
+﻿using FitFlow.Api.Extensions;
+using FitFlow.Application.Trainers;
+using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FitFlow.Api.Controllers;
@@ -8,10 +10,17 @@ namespace FitFlow.Api.Controllers;
 public class TrainersController : ControllerBase
 {
     private readonly ITrainerService _trainerService;
+    private readonly IValidator<TrainerCreationRequest> _trainerCreationValidator;
+    private readonly IValidator<TrainerUpdateRequest> _trainerUpdateValidator;
 
-    public TrainersController(ITrainerService trainerService)
+    public TrainersController(
+        ITrainerService trainerService,
+        IValidator<TrainerCreationRequest> trainerCreationValidator,
+        IValidator<TrainerUpdateRequest> trainerUpdateValidator)
     {
         _trainerService = trainerService;
+        _trainerCreationValidator = trainerCreationValidator;
+        _trainerUpdateValidator = trainerUpdateValidator;
     }
 
     [HttpGet]
@@ -27,14 +36,14 @@ public class TrainersController : ControllerBase
         Guid id,
         CancellationToken cancellationToken)
     {
-        var trainer = await _trainerService.GetByIdAsync(id, cancellationToken);
+        var result = await _trainerService.GetByIdAsync(id, cancellationToken);
 
-        if (trainer is null)
+        if (result.IsFailure)
         {
-            return NotFound();
+            return NotFound(result.Error);
         }
 
-        return Ok(trainer);
+        return Ok(result.Value);
     }
 
     [HttpPost]
@@ -42,7 +51,21 @@ public class TrainersController : ControllerBase
         TrainerCreationRequest request,
         CancellationToken cancellationToken)
     {
-        var trainer = await _trainerService.CreateAsync(request, cancellationToken);
+        var validationResult = await _trainerCreationValidator.ValidateAsync(request, cancellationToken);
+
+        if (!validationResult.IsValid)
+        {
+            return ValidationProblem(new ValidationProblemDetails(validationResult.ToErrorDictionary()));
+        }
+
+        var result = await _trainerService.CreateAsync(request, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return BadRequest(result.Error);
+        }
+
+        var trainer = result.Value!;
 
         return CreatedAtAction(
             nameof(GetById),
@@ -53,14 +76,21 @@ public class TrainersController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(
         Guid id,
-        UpdateTrainerRequest request,
+        TrainerUpdateRequest request,
         CancellationToken cancellationToken)
     {
+        var validationResult = await _trainerUpdateValidator.ValidateAsync(request, cancellationToken);
+
+        if (!validationResult.IsValid)
+        {
+            return ValidationProblem(new ValidationProblemDetails(validationResult.ToErrorDictionary()));
+        }
+
         var result = await _trainerService.UpdateAsync(id, request, cancellationToken);
 
-        if (!result)
+        if (result.IsFailure)
         {
-            return NotFound();
+            return NotFound(result.Error);
         }
 
         return NoContent();
@@ -73,9 +103,9 @@ public class TrainersController : ControllerBase
     {
         var result = await _trainerService.DeleteAsync(id, cancellationToken);
 
-        if (!result)
+        if (result.IsFailure)
         {
-            return NotFound();
+            return NotFound(result.Error);
         }
 
         return NoContent();

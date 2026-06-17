@@ -1,6 +1,6 @@
 ﻿namespace FitFlow.Application.Trainers;
 
-public class UpdateTrainerRequest
+public class TrainerUpdateRequest
 {
     public string FirstName { get; set; } = string.Empty;
 
