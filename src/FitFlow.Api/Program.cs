@@ -5,6 +5,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using FitFlow.Api.Auth;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,7 +33,23 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AuthorizationPolicyNames.AdminOnly, policy =>
+    {
+        policy.RequireRole(RoleNames.Admin);
+    });
+
+    options.AddPolicy(AuthorizationPolicyNames.ManagementAccess, policy =>
+    {
+        policy.RequireRole(RoleNames.Admin, RoleNames.Manager);
+    });
+
+    options.AddPolicy(AuthorizationPolicyNames.TrainerAccess, policy =>
+    {
+        policy.RequireRole(RoleNames.Admin, RoleNames.Manager, RoleNames.Trainer);
+    });
+});
 
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();

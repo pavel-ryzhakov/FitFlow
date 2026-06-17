@@ -3,13 +3,14 @@ using FitFlow.Application.Clients;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-
+using FitFlow.Api.Auth;
+using Microsoft.AspNetCore.Authorization;
 
 namespace FitFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/clients")]
-[Authorize]
+[Authorize(Policy = AuthorizationPolicyNames.ManagementAccess)]
 public class ClientsController : ControllerBase
 {
     private readonly IClientService _clientService;
@@ -104,7 +105,7 @@ public class ClientsController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = AuthorizationPolicyNames.AdminOnly)]
     public async Task<IActionResult> Delete(
         Guid id,
         CancellationToken cancellationToken)

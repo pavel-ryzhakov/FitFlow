@@ -1,12 +1,15 @@
-﻿using FitFlow.Api.Extensions;
+﻿using FitFlow.Api.Auth;
+using FitFlow.Api.Extensions;
 using FitFlow.Application.Sections;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FitFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/sections")]
+[Authorize(Policy = AuthorizationPolicyNames.TrainerAccess)]
 public class SectionsController : ControllerBase
 {
     private readonly ISectionService _sectionService;
@@ -24,6 +27,7 @@ public class SectionsController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Policy = AuthorizationPolicyNames.ManagementAccess)]
     public async Task<ActionResult<List<SectionDto>>> GetAll(CancellationToken cancellationToken)
     {
         var sections = await _sectionService.GetAllAsync(cancellationToken);
@@ -32,6 +36,7 @@ public class SectionsController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicyNames.ManagementAccess)]
     public async Task<ActionResult<SectionDto>> GetById(
         Guid id,
         CancellationToken cancellationToken)
@@ -47,6 +52,7 @@ public class SectionsController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicyNames.ManagementAccess)]
     public async Task<ActionResult<SectionDto>> Create(
         SectionCreationRequest request,
         CancellationToken cancellationToken)
@@ -74,6 +80,7 @@ public class SectionsController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicyNames.ManagementAccess)]
     public async Task<IActionResult> Update(
         Guid id,
         SectionUpdateRequest request,
@@ -97,6 +104,7 @@ public class SectionsController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicyNames.ManagementAccess)]
     public async Task<IActionResult> Delete(
         Guid id,
         CancellationToken cancellationToken)

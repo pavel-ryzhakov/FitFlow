@@ -1,12 +1,15 @@
-﻿using FitFlow.Api.Extensions;
+﻿using FitFlow.Api.Auth;
+using FitFlow.Api.Extensions;
 using FitFlow.Application.Visits;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FitFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/visits")]
+[Authorize(Policy = AuthorizationPolicyNames.ManagementAccess)]
 public class VisitsController : ControllerBase
 {
     private readonly IVisitService _visitService;

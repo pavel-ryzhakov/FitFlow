@@ -1,12 +1,15 @@
+using FitFlow.Api.Auth;
 using FitFlow.Api.Extensions;
 using FitFlow.Application.Payments;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FitFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/payments")]
+[Authorize(Policy = AuthorizationPolicyNames.ManagementAccess)]
 public class PaymentsController : ControllerBase
 {
     private readonly IPaymentService _paymentService;
@@ -101,6 +104,7 @@ public class PaymentsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/refund")]
+    [Authorize(Policy = AuthorizationPolicyNames.AdminOnly)]
     public async Task<IActionResult> Refund(
         Guid id,
         CancellationToken cancellationToken)

@@ -1,6 +1,7 @@
 using FitFlow.Api.Extensions;
 using FitFlow.Application.Auth;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FitFlow.Api.Controllers;
@@ -24,6 +25,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
+    [AllowAnonymous]
     public async Task<ActionResult<AuthResponse>> Register(
         UserRegistrationRequest request,
         CancellationToken cancellationToken)
@@ -46,6 +48,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [AllowAnonymous]
     public async Task<ActionResult<AuthResponse>> Login(
         UserLoginRequest request,
         CancellationToken cancellationToken)

@@ -2,11 +2,15 @@
 using FitFlow.Application.Trainers;
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
+using FitFlow.Api.Auth;
+using Microsoft.AspNetCore.Authorization;
 
 namespace FitFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/trainers")]
+[Authorize(Policy = AuthorizationPolicyNames.TrainerAccess)]
+
 public class TrainersController : ControllerBase
 {
     private readonly ITrainerService _trainerService;
@@ -47,9 +51,11 @@ public class TrainersController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<TrainerDto>> Create(
-        TrainerCreationRequest request,
-        CancellationToken cancellationToken)
+    [Authorize(Policy = AuthorizationPolicyNames.ManagementAccess)]
+public async Task<ActionResult<TrainerDto>> Create(
+    TrainerCreationRequest request,
+    CancellationToken cancellationToken)
+    
     {
         var validationResult = await _trainerCreationValidator.ValidateAsync(request, cancellationToken);
 
@@ -97,6 +103,7 @@ public class TrainersController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = AuthorizationPolicyNames.AdminOnly)]
     public async Task<IActionResult> Delete(
         Guid id,
         CancellationToken cancellationToken)
