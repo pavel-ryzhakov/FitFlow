@@ -1,4 +1,5 @@
-﻿using FitFlow.Application.TrainingSessions;
+﻿using FitFlow.Application.Common.Results;
+using FitFlow.Application.TrainingSessions;
 using FitFlow.Domain.Entities;
 using FitFlow.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -39,9 +40,11 @@ public class TrainingSessionService : ITrainingSessionService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<TrainingSessionDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result<TrainingSessionDto>> GetByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
     {
-        return await _dbContext.TrainingSessions
+        var trainingSession = await _dbContext.TrainingSessions
             .AsNoTracking()
             .Include(x => x.Section)
             .Include(x => x.Trainer)
@@ -62,13 +65,28 @@ public class TrainingSessionService : ITrainingSessionService
                 VisitsCount = x.Visits.Count
             })
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (trainingSession is null)
+        {
+            return Result<TrainingSessionDto>.Failure(TrainingSessionErrors.NotFound);
+        }
+
+        return Result<TrainingSessionDto>.Success(trainingSession);
     }
 
-    public async Task<List<TrainingSessionDto>> GetBySectionIdAsync(
+    public async Task<Result<List<TrainingSessionDto>>> GetBySectionIdAsync(
         Guid sectionId,
         CancellationToken cancellationToken = default)
     {
-        return await _dbContext.TrainingSessions
+        var sectionExists = await _dbContext.Sections
+            .AnyAsync(x => x.Id == sectionId, cancellationToken);
+
+        if (!sectionExists)
+        {
+            return Result<List<TrainingSessionDto>>.Failure(TrainingSessionErrors.SectionNotFound);
+        }
+
+        var trainingSessions = await _dbContext.TrainingSessions
             .AsNoTracking()
             .Include(x => x.Section)
             .Include(x => x.Trainer)
@@ -90,13 +108,23 @@ public class TrainingSessionService : ITrainingSessionService
                 VisitsCount = x.Visits.Count
             })
             .ToListAsync(cancellationToken);
+
+        return Result<List<TrainingSessionDto>>.Success(trainingSessions);
     }
 
-    public async Task<List<TrainingSessionDto>> GetByTrainerIdAsync(
+    public async Task<Result<List<TrainingSessionDto>>> GetByTrainerIdAsync(
         Guid trainerId,
         CancellationToken cancellationToken = default)
     {
-        return await _dbContext.TrainingSessions
+        var trainerExists = await _dbContext.Trainers
+            .AnyAsync(x => x.Id == trainerId, cancellationToken);
+
+        if (!trainerExists)
+        {
+            return Result<List<TrainingSessionDto>>.Failure(TrainingSessionErrors.TrainerNotFound);
+        }
+
+        var trainingSessions = await _dbContext.TrainingSessions
             .AsNoTracking()
             .Include(x => x.Section)
             .Include(x => x.Trainer)
@@ -118,47 +146,58 @@ public class TrainingSessionService : ITrainingSessionService
                 VisitsCount = x.Visits.Count
             })
             .ToListAsync(cancellationToken);
+
+        return Result<List<TrainingSessionDto>>.Success(trainingSessions);
     }
 
-    public async Task<TrainingSessionDto?> CreateAsync(
+    public async Task<Result<TrainingSessionDto>> CreateAsync(
         TrainingSessionCreationRequest request,
         CancellationToken cancellationToken = default)
     {
         if (request.EndTime <= request.StartTime)
         {
-            return null;
+            return Result<TrainingSessionDto>.Failure(TrainingSessionErrors.InvalidDateRange);
         }
 
         if (request.MaxParticipants <= 0)
         {
-            return null;
+            return Result<TrainingSessionDto>.Failure(TrainingSessionErrors.InvalidMaxParticipants);
         }
 
         var section = await _dbContext.Sections
-            .Include(x => x.Trainer)
             .FirstOrDefaultAsync(x => x.Id == request.SectionId, cancellationToken);
 
-        if (section is null || !section.IsActive)
+        if (section is null)
         {
-            return null;
+            return Result<TrainingSessionDto>.Failure(TrainingSessionErrors.SectionNotFound);
         }
 
-        if (section.TrainerId != request.TrainerId)
+        if (!section.IsActive)
         {
-            return null;
-        }
-
-        if (request.MaxParticipants > section.Capacity)
-        {
-            return null;
+            return Result<TrainingSessionDto>.Failure(TrainingSessionErrors.SectionInactive);
         }
 
         var trainer = await _dbContext.Trainers
             .FirstOrDefaultAsync(x => x.Id == request.TrainerId, cancellationToken);
 
-        if (trainer is null || !trainer.IsActive)
+        if (trainer is null)
         {
-            return null;
+            return Result<TrainingSessionDto>.Failure(TrainingSessionErrors.TrainerNotFound);
+        }
+
+        if (!trainer.IsActive)
+        {
+            return Result<TrainingSessionDto>.Failure(TrainingSessionErrors.TrainerInactive);
+        }
+
+        if (section.TrainerId != request.TrainerId)
+        {
+            return Result<TrainingSessionDto>.Failure(TrainingSessionErrors.TrainerDoesNotMatchSection);
+        }
+
+        if (request.MaxParticipants > section.Capacity)
+        {
+            return Result<TrainingSessionDto>.Failure(TrainingSessionErrors.CapacityExceeded);
         }
 
         var trainingSession = new TrainingSession
@@ -174,7 +213,7 @@ public class TrainingSessionService : ITrainingSessionService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return new TrainingSessionDto
+        return Result<TrainingSessionDto>.Success(new TrainingSessionDto
         {
             Id = trainingSession.Id,
             SectionId = trainingSession.SectionId,
@@ -185,22 +224,22 @@ public class TrainingSessionService : ITrainingSessionService
             EndTime = trainingSession.EndTime,
             MaxParticipants = trainingSession.MaxParticipants,
             VisitsCount = 0
-        };
+        });
     }
 
-    public async Task<bool> UpdateAsync(
+    public async Task<Result> UpdateAsync(
         Guid id,
         TrainingSessionUpdateRequest request,
         CancellationToken cancellationToken = default)
     {
         if (request.EndTime <= request.StartTime)
         {
-            return false;
+            return Result.Failure(TrainingSessionErrors.InvalidDateRange);
         }
 
         if (request.MaxParticipants <= 0)
         {
-            return false;
+            return Result.Failure(TrainingSessionErrors.InvalidMaxParticipants);
         }
 
         var trainingSession = await _dbContext.TrainingSessions
@@ -209,38 +248,48 @@ public class TrainingSessionService : ITrainingSessionService
 
         if (trainingSession is null)
         {
-            return false;
+            return Result.Failure(TrainingSessionErrors.NotFound);
         }
 
         var section = await _dbContext.Sections
             .FirstOrDefaultAsync(x => x.Id == request.SectionId, cancellationToken);
 
-        if (section is null || !section.IsActive)
+        if (section is null)
         {
-            return false;
+            return Result.Failure(TrainingSessionErrors.SectionNotFound);
+        }
+
+        if (!section.IsActive)
+        {
+            return Result.Failure(TrainingSessionErrors.SectionInactive);
+        }
+
+        var trainer = await _dbContext.Trainers
+            .FirstOrDefaultAsync(x => x.Id == request.TrainerId, cancellationToken);
+
+        if (trainer is null)
+        {
+            return Result.Failure(TrainingSessionErrors.TrainerNotFound);
+        }
+
+        if (!trainer.IsActive)
+        {
+            return Result.Failure(TrainingSessionErrors.TrainerInactive);
         }
 
         if (section.TrainerId != request.TrainerId)
         {
-            return false;
+            return Result.Failure(TrainingSessionErrors.TrainerDoesNotMatchSection);
         }
 
         if (request.MaxParticipants > section.Capacity)
         {
-            return false;
+            return Result.Failure(TrainingSessionErrors.CapacityExceeded);
         }
 
         if (request.MaxParticipants < trainingSession.Visits.Count)
         {
-            return false;
-        }
-
-        var trainerExists = await _dbContext.Trainers
-            .AnyAsync(x => x.Id == request.TrainerId && x.IsActive, cancellationToken);
-
-        if (!trainerExists)
-        {
-            return false;
+            return Result.Failure(TrainingSessionErrors.MaxParticipantsLessThanVisitsCount);
         }
 
         trainingSession.SectionId = request.SectionId;
@@ -252,10 +301,10 @@ public class TrainingSessionService : ITrainingSessionService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return true;
+        return Result.Success();
     }
 
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var trainingSession = await _dbContext.TrainingSessions
             .Include(x => x.Visits)
@@ -263,18 +312,18 @@ public class TrainingSessionService : ITrainingSessionService
 
         if (trainingSession is null)
         {
-            return false;
+            return Result.Failure(TrainingSessionErrors.NotFound);
         }
 
         if (trainingSession.Visits.Count > 0)
         {
-            return false;
+            return Result.Failure(TrainingSessionErrors.AlreadyHasVisits);
         }
 
         _dbContext.TrainingSessions.Remove(trainingSession);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return true;
+        return Result.Success();
     }
 }

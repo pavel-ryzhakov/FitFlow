@@ -1,8 +1,8 @@
-﻿using FitFlow.Application.Sections;
+﻿using FitFlow.Application.Common.Results;
+using FitFlow.Application.Sections;
 using FitFlow.Domain.Entities;
 using FitFlow.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using System.ComponentModel.Design;
 
 namespace FitFlow.Infrastructure.Services;
 
@@ -36,9 +36,11 @@ public class SectionService : ISectionService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<SectionDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result<SectionDto>> GetByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Sections
+        var section = await _dbContext.Sections
             .AsNoTracking()
             .Include(x => x.Trainer)
             .Where(x => x.Id == id)
@@ -55,9 +57,16 @@ public class SectionService : ISectionService
                 IsActive = x.IsActive
             })
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (section is null)
+        {
+            return Result<SectionDto>.Failure(SectionErrors.NotFound);
+        }
+
+        return Result<SectionDto>.Success(section);
     }
 
-    public async Task<SectionDto?> CreateAsync(
+    public async Task<Result<SectionDto>> CreateAsync(
         SectionCreationRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -66,7 +75,12 @@ public class SectionService : ISectionService
 
         if (trainer is null)
         {
-            return null;
+            return Result<SectionDto>.Failure(SectionErrors.TrainerNotFound);
+        }
+
+        if (!trainer.IsActive)
+        {
+            return Result<SectionDto>.Failure(SectionErrors.TrainerInactive);
         }
 
         var section = new Section
@@ -82,7 +96,7 @@ public class SectionService : ISectionService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return new SectionDto
+        return Result<SectionDto>.Success(new SectionDto
         {
             Id = section.Id,
             Name = section.Name,
@@ -91,10 +105,10 @@ public class SectionService : ISectionService
             TrainerFullName = $"{trainer.FirstName} {trainer.LastName}",
             Capacity = section.Capacity,
             IsActive = section.IsActive
-        };
+        });
     }
 
-    public async Task<bool> UpdateAsync(
+    public async Task<Result> UpdateAsync(
         Guid id,
         SectionUpdateRequest request,
         CancellationToken cancellationToken = default)
@@ -104,15 +118,20 @@ public class SectionService : ISectionService
 
         if (section is null)
         {
-            return false;
+            return Result.Failure(SectionErrors.NotFound);
         }
 
-        var trainerExists = await _dbContext.Trainers
-            .AnyAsync(x => x.Id == request.TrainerId, cancellationToken);
+        var trainer = await _dbContext.Trainers
+            .FirstOrDefaultAsync(x => x.Id == request.TrainerId, cancellationToken);
 
-        if (!trainerExists)
+        if (trainer is null)
         {
-            return false;
+            return Result.Failure(SectionErrors.TrainerNotFound);
+        }
+
+        if (!trainer.IsActive)
+        {
+            return Result.Failure(SectionErrors.TrainerInactive);
         }
 
         section.Name = request.Name;
@@ -124,17 +143,17 @@ public class SectionService : ISectionService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return true;
+        return Result.Success();
     }
 
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var section = await _dbContext.Sections
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
         if (section is null)
         {
-            return false;
+            return Result.Failure(SectionErrors.NotFound);
         }
 
         section.IsActive = false;
@@ -142,6 +161,6 @@ public class SectionService : ISectionService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return true;
+        return Result.Success();
     }
 }

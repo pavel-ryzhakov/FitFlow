@@ -1,4 +1,5 @@
-﻿using FitFlow.Application.Memberships;
+﻿using FitFlow.Application.Common.Results;
+using FitFlow.Application.Memberships;
 using FitFlow.Domain.Entities;
 using FitFlow.Domain.Enums;
 using FitFlow.Infrastructure.Persistence;
@@ -39,9 +40,11 @@ public class MembershipService : IMembershipService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<MembershipDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result<MembershipDto>> GetByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Memberships
+        var membership = await _dbContext.Memberships
             .AsNoTracking()
             .Include(x => x.Client)
             .Where(x => x.Id == id)
@@ -61,13 +64,28 @@ public class MembershipService : IMembershipService
                 Status = x.Status
             })
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (membership is null)
+        {
+            return Result<MembershipDto>.Failure(MembershipErrors.NotFound);
+        }
+
+        return Result<MembershipDto>.Success(membership);
     }
 
-    public async Task<List<MembershipDto>> GetByClientIdAsync(
+    public async Task<Result<List<MembershipDto>>> GetByClientIdAsync(
         Guid clientId,
         CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Memberships
+        var clientExists = await _dbContext.Clients
+            .AnyAsync(x => x.Id == clientId, cancellationToken);
+
+        if (!clientExists)
+        {
+            return Result<List<MembershipDto>>.Failure(MembershipErrors.ClientNotFound);
+        }
+
+        var memberships = await _dbContext.Memberships
             .AsNoTracking()
             .Include(x => x.Client)
             .Where(x => x.ClientId == clientId)
@@ -88,15 +106,27 @@ public class MembershipService : IMembershipService
                 Status = x.Status
             })
             .ToListAsync(cancellationToken);
+
+        return Result<List<MembershipDto>>.Success(memberships);
     }
 
-    public async Task<MembershipDto?> CreateAsync(
+    public async Task<Result<MembershipDto>> CreateAsync(
         MembershipCreationRequest request,
         CancellationToken cancellationToken = default)
     {
         if (request.EndDate <= request.StartDate)
         {
-            return null;
+            return Result<MembershipDto>.Failure(MembershipErrors.InvalidDateRange);
+        }
+
+        if (request.VisitsLimit <= 0)
+        {
+            return Result<MembershipDto>.Failure(MembershipErrors.InvalidVisitsLimit);
+        }
+
+        if (request.Price <= 0)
+        {
+            return Result<MembershipDto>.Failure(MembershipErrors.InvalidPrice);
         }
 
         var client = await _dbContext.Clients
@@ -104,7 +134,12 @@ public class MembershipService : IMembershipService
 
         if (client is null)
         {
-            return null;
+            return Result<MembershipDto>.Failure(MembershipErrors.ClientNotFound);
+        }
+
+        if (!client.IsActive)
+        {
+            return Result<MembershipDto>.Failure(MembershipErrors.ClientInactive);
         }
 
         var membership = new Membership
@@ -123,7 +158,7 @@ public class MembershipService : IMembershipService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return new MembershipDto
+        return Result<MembershipDto>.Success(new MembershipDto
         {
             Id = membership.Id,
             ClientId = membership.ClientId,
@@ -135,17 +170,32 @@ public class MembershipService : IMembershipService
             VisitsUsed = membership.VisitsUsed,
             Price = membership.Price,
             Status = membership.Status
-        };
+        });
     }
 
-    public async Task<bool> UpdateAsync(
+    public async Task<Result> UpdateAsync(
         Guid id,
         MembershipUpdateRequest request,
         CancellationToken cancellationToken = default)
     {
         if (request.EndDate <= request.StartDate)
         {
-            return false;
+            return Result.Failure(MembershipErrors.InvalidDateRange);
+        }
+
+        if (request.VisitsLimit <= 0)
+        {
+            return Result.Failure(MembershipErrors.InvalidVisitsLimit);
+        }
+
+        if (request.VisitsUsed > request.VisitsLimit)
+        {
+            return Result.Failure(MembershipErrors.InvalidVisitsUsed);
+        }
+
+        if (request.Price <= 0)
+        {
+            return Result.Failure(MembershipErrors.InvalidPrice);
         }
 
         var membership = await _dbContext.Memberships
@@ -153,7 +203,7 @@ public class MembershipService : IMembershipService
 
         if (membership is null)
         {
-            return false;
+            return Result.Failure(MembershipErrors.NotFound);
         }
 
         membership.Type = request.Type;
@@ -167,17 +217,17 @@ public class MembershipService : IMembershipService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return true;
+        return Result.Success();
     }
 
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var membership = await _dbContext.Memberships
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
         if (membership is null)
         {
-            return false;
+            return Result.Failure(MembershipErrors.NotFound);
         }
 
         membership.Status = MembershipStatus.Cancelled;
@@ -185,6 +235,6 @@ public class MembershipService : IMembershipService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return true;
+        return Result.Success();
     }
 }

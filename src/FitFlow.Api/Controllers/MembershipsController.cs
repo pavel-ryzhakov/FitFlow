@@ -1,4 +1,6 @@
-﻿using FitFlow.Application.Memberships;
+﻿using FitFlow.Api.Extensions;
+using FitFlow.Application.Memberships;
+using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FitFlow.Api.Controllers;
@@ -8,10 +10,17 @@ namespace FitFlow.Api.Controllers;
 public class MembershipsController : ControllerBase
 {
     private readonly IMembershipService _membershipService;
+    private readonly IValidator<MembershipCreationRequest> _membershipCreationValidator;
+    private readonly IValidator<MembershipUpdateRequest> _membershipUpdateValidator;
 
-    public MembershipsController(IMembershipService membershipService)
+    public MembershipsController(
+        IMembershipService membershipService,
+        IValidator<MembershipCreationRequest> membershipCreationValidator,
+        IValidator<MembershipUpdateRequest> membershipUpdateValidator)
     {
         _membershipService = membershipService;
+        _membershipCreationValidator = membershipCreationValidator;
+        _membershipUpdateValidator = membershipUpdateValidator;
     }
 
     [HttpGet]
@@ -27,14 +36,14 @@ public class MembershipsController : ControllerBase
         Guid id,
         CancellationToken cancellationToken)
     {
-        var membership = await _membershipService.GetByIdAsync(id, cancellationToken);
+        var result = await _membershipService.GetByIdAsync(id, cancellationToken);
 
-        if (membership is null)
+        if (result.IsFailure)
         {
-            return NotFound();
+            return NotFound(result.Error);
         }
 
-        return Ok(membership);
+        return Ok(result.Value);
     }
 
     [HttpGet("client/{clientId:guid}")]
@@ -42,9 +51,14 @@ public class MembershipsController : ControllerBase
         Guid clientId,
         CancellationToken cancellationToken)
     {
-        var memberships = await _membershipService.GetByClientIdAsync(clientId, cancellationToken);
+        var result = await _membershipService.GetByClientIdAsync(clientId, cancellationToken);
 
-        return Ok(memberships);
+        if (result.IsFailure)
+        {
+            return NotFound(result.Error);
+        }
+
+        return Ok(result.Value);
     }
 
     [HttpPost]
@@ -52,12 +66,21 @@ public class MembershipsController : ControllerBase
         MembershipCreationRequest request,
         CancellationToken cancellationToken)
     {
-        var membership = await _membershipService.CreateAsync(request, cancellationToken);
+        var validationResult = await _membershipCreationValidator.ValidateAsync(request, cancellationToken);
 
-        if (membership is null)
+        if (!validationResult.IsValid)
         {
-            return BadRequest("Client not found or membership data is invalid.");
+            return ValidationProblem(new ValidationProblemDetails(validationResult.ToErrorDictionary()));
         }
+
+        var result = await _membershipService.CreateAsync(request, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return BadRequest(result.Error);
+        }
+
+        var membership = result.Value!;
 
         return CreatedAtAction(
             nameof(GetById),
@@ -71,11 +94,23 @@ public class MembershipsController : ControllerBase
         MembershipUpdateRequest request,
         CancellationToken cancellationToken)
     {
+        var validationResult = await _membershipUpdateValidator.ValidateAsync(request, cancellationToken);
+
+        if (!validationResult.IsValid)
+        {
+            return ValidationProblem(new ValidationProblemDetails(validationResult.ToErrorDictionary()));
+        }
+
         var result = await _membershipService.UpdateAsync(id, request, cancellationToken);
 
-        if (!result)
+        if (result.IsFailure)
         {
-            return NotFound();
+            if (result.Error == MembershipErrors.NotFound)
+            {
+                return NotFound(result.Error);
+            }
+
+            return BadRequest(result.Error);
         }
 
         return NoContent();
@@ -88,9 +123,9 @@ public class MembershipsController : ControllerBase
     {
         var result = await _membershipService.DeleteAsync(id, cancellationToken);
 
-        if (!result)
+        if (result.IsFailure)
         {
-            return NotFound();
+            return NotFound(result.Error);
         }
 
         return NoContent();

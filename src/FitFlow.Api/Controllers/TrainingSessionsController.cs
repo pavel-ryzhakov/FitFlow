@@ -1,4 +1,6 @@
+using FitFlow.Api.Extensions;
 using FitFlow.Application.TrainingSessions;
+using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FitFlow.Api.Controllers;
@@ -8,10 +10,17 @@ namespace FitFlow.Api.Controllers;
 public class TrainingSessionsController : ControllerBase
 {
     private readonly ITrainingSessionService _trainingSessionService;
+    private readonly IValidator<TrainingSessionCreationRequest> _trainingSessionCreationValidator;
+    private readonly IValidator<TrainingSessionUpdateRequest> _trainingSessionUpdateValidator;
 
-    public TrainingSessionsController(ITrainingSessionService trainingSessionService)
+    public TrainingSessionsController(
+        ITrainingSessionService trainingSessionService,
+        IValidator<TrainingSessionCreationRequest> trainingSessionCreationValidator,
+        IValidator<TrainingSessionUpdateRequest> trainingSessionUpdateValidator)
     {
         _trainingSessionService = trainingSessionService;
+        _trainingSessionCreationValidator = trainingSessionCreationValidator;
+        _trainingSessionUpdateValidator = trainingSessionUpdateValidator;
     }
 
     [HttpGet]
@@ -27,14 +36,14 @@ public class TrainingSessionsController : ControllerBase
         Guid id,
         CancellationToken cancellationToken)
     {
-        var trainingSession = await _trainingSessionService.GetByIdAsync(id, cancellationToken);
+        var result = await _trainingSessionService.GetByIdAsync(id, cancellationToken);
 
-        if (trainingSession is null)
+        if (result.IsFailure)
         {
-            return NotFound();
+            return NotFound(result.Error);
         }
 
-        return Ok(trainingSession);
+        return Ok(result.Value);
     }
 
     [HttpGet("section/{sectionId:guid}")]
@@ -42,9 +51,14 @@ public class TrainingSessionsController : ControllerBase
         Guid sectionId,
         CancellationToken cancellationToken)
     {
-        var trainingSessions = await _trainingSessionService.GetBySectionIdAsync(sectionId, cancellationToken);
+        var result = await _trainingSessionService.GetBySectionIdAsync(sectionId, cancellationToken);
 
-        return Ok(trainingSessions);
+        if (result.IsFailure)
+        {
+            return NotFound(result.Error);
+        }
+
+        return Ok(result.Value);
     }
 
     [HttpGet("trainer/{trainerId:guid}")]
@@ -52,9 +66,14 @@ public class TrainingSessionsController : ControllerBase
         Guid trainerId,
         CancellationToken cancellationToken)
     {
-        var trainingSessions = await _trainingSessionService.GetByTrainerIdAsync(trainerId, cancellationToken);
+        var result = await _trainingSessionService.GetByTrainerIdAsync(trainerId, cancellationToken);
 
-        return Ok(trainingSessions);
+        if (result.IsFailure)
+        {
+            return NotFound(result.Error);
+        }
+
+        return Ok(result.Value);
     }
 
     [HttpPost]
@@ -62,12 +81,21 @@ public class TrainingSessionsController : ControllerBase
         TrainingSessionCreationRequest request,
         CancellationToken cancellationToken)
     {
-        var trainingSession = await _trainingSessionService.CreateAsync(request, cancellationToken);
+        var validationResult = await _trainingSessionCreationValidator.ValidateAsync(request, cancellationToken);
 
-        if (trainingSession is null)
+        if (!validationResult.IsValid)
         {
-            return BadRequest("Training session data is invalid.");
+            return ValidationProblem(new ValidationProblemDetails(validationResult.ToErrorDictionary()));
         }
+
+        var result = await _trainingSessionService.CreateAsync(request, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return BadRequest(result.Error);
+        }
+
+        var trainingSession = result.Value!;
 
         return CreatedAtAction(
             nameof(GetById),
@@ -81,11 +109,23 @@ public class TrainingSessionsController : ControllerBase
         TrainingSessionUpdateRequest request,
         CancellationToken cancellationToken)
     {
+        var validationResult = await _trainingSessionUpdateValidator.ValidateAsync(request, cancellationToken);
+
+        if (!validationResult.IsValid)
+        {
+            return ValidationProblem(new ValidationProblemDetails(validationResult.ToErrorDictionary()));
+        }
+
         var result = await _trainingSessionService.UpdateAsync(id, request, cancellationToken);
 
-        if (!result)
+        if (result.IsFailure)
         {
-            return BadRequest("Training session was not found or data is invalid.");
+            if (result.Error == TrainingSessionErrors.NotFound)
+            {
+                return NotFound(result.Error);
+            }
+
+            return BadRequest(result.Error);
         }
 
         return NoContent();
@@ -98,9 +138,14 @@ public class TrainingSessionsController : ControllerBase
     {
         var result = await _trainingSessionService.DeleteAsync(id, cancellationToken);
 
-        if (!result)
+        if (result.IsFailure)
         {
-            return BadRequest("Training session was not found or already has visits.");
+            if (result.Error == TrainingSessionErrors.NotFound)
+            {
+                return NotFound(result.Error);
+            }
+
+            return BadRequest(result.Error);
         }
 
         return NoContent();

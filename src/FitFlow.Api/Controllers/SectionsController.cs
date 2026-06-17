@@ -1,4 +1,6 @@
-﻿using FitFlow.Application.Sections;
+﻿using FitFlow.Api.Extensions;
+using FitFlow.Application.Sections;
+using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FitFlow.Api.Controllers;
@@ -8,10 +10,17 @@ namespace FitFlow.Api.Controllers;
 public class SectionsController : ControllerBase
 {
     private readonly ISectionService _sectionService;
+    private readonly IValidator<SectionCreationRequest> _sectionCreationValidator;
+    private readonly IValidator<SectionUpdateRequest> _sectionUpdateValidator;
 
-    public SectionsController(ISectionService sectionService)
+    public SectionsController(
+        ISectionService sectionService,
+        IValidator<SectionCreationRequest> sectionCreationValidator,
+        IValidator<SectionUpdateRequest> sectionUpdateValidator)
     {
         _sectionService = sectionService;
+        _sectionCreationValidator = sectionCreationValidator;
+        _sectionUpdateValidator = sectionUpdateValidator;
     }
 
     [HttpGet]
@@ -27,14 +36,14 @@ public class SectionsController : ControllerBase
         Guid id,
         CancellationToken cancellationToken)
     {
-        var section = await _sectionService.GetByIdAsync(id, cancellationToken);
+        var result = await _sectionService.GetByIdAsync(id, cancellationToken);
 
-        if (section is null)
+        if (result.IsFailure)
         {
-            return NotFound();
+            return NotFound(result.Error);
         }
 
-        return Ok(section);
+        return Ok(result.Value);
     }
 
     [HttpPost]
@@ -42,12 +51,21 @@ public class SectionsController : ControllerBase
         SectionCreationRequest request,
         CancellationToken cancellationToken)
     {
-        var section = await _sectionService.CreateAsync(request, cancellationToken);
+        var validationResult = await _sectionCreationValidator.ValidateAsync(request, cancellationToken);
 
-        if (section is null)
+        if (!validationResult.IsValid)
         {
-            return BadRequest("Trainer not found.");
+            return ValidationProblem(new ValidationProblemDetails(validationResult.ToErrorDictionary()));
         }
+
+        var result = await _sectionService.CreateAsync(request, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return BadRequest(result.Error);
+        }
+
+        var section = result.Value!;
 
         return CreatedAtAction(
             nameof(GetById),
@@ -61,11 +79,18 @@ public class SectionsController : ControllerBase
         SectionUpdateRequest request,
         CancellationToken cancellationToken)
     {
+        var validationResult = await _sectionUpdateValidator.ValidateAsync(request, cancellationToken);
+
+        if (!validationResult.IsValid)
+        {
+            return ValidationProblem(new ValidationProblemDetails(validationResult.ToErrorDictionary()));
+        }
+
         var result = await _sectionService.UpdateAsync(id, request, cancellationToken);
 
-        if (!result)
+        if (result.IsFailure)
         {
-            return NotFound();
+            return BadRequest(result.Error);
         }
 
         return NoContent();
@@ -78,9 +103,9 @@ public class SectionsController : ControllerBase
     {
         var result = await _sectionService.DeleteAsync(id, cancellationToken);
 
-        if (!result)
+        if (result.IsFailure)
         {
-            return NotFound();
+            return NotFound(result.Error);
         }
 
         return NoContent();
