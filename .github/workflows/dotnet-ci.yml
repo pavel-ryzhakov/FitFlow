@@ -18,6 +18,7 @@ jobs:
 
     env:
       DOTNET_VERSION: '10.0.x'
+      Jwt__SecretKey: 'fitflow-ci-secret-key-for-tests-only-123456789'
 
     steps:
       - name: Checkout repository
@@ -28,6 +29,9 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: Show .NET info
+        run: dotnet --info
+
       - name: Restore dependencies
         run: dotnet restore
 
@@ -35,4 +39,4 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Run tests
-        run: dotnet test --configuration Release --no-build --verbosity normal
+        run: dotnet test --configuration Release --no-restore --verbosity normal
