@@ -6,7 +6,9 @@
     <Project Path="src/FitFlow.Infrastructure/FitFlow.Infrastructure.csproj" />
     <Project Path="src/FitFlow.Worker/Worker.csproj" />
   </Folder>
-  <Folder Name="/tests/" />
+  <Folder Name="/tests/">
+    <Project Path="tests/FitFlow.IntegrationTests/FitFlow.IntegrationTests.csproj" />
+  </Folder>
   <Folder Name="/Элементы решения/">
     <File Path="docker-compose.yml" />
   </Folder>

@@ -4,7 +4,6 @@ using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using FitFlow.Api.Auth;
-using Microsoft.AspNetCore.Authorization;
 
 namespace FitFlow.Api.Controllers;
 
