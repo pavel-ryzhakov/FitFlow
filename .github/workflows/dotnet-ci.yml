@@ -12,12 +12,12 @@ on:
       - develop
 
 jobs:
-  build:
+  build-and-test:
     name: Build and test
     runs-on: ubuntu-latest
 
     env:
-      DOTNET_VERSION: '9.0.x'
+      DOTNET_VERSION: '10.0.x'
 
     steps:
       - name: Checkout repository
